@@ -891,7 +891,7 @@ function renderChips(){
   document.getElementById("times").innerHTML=SLOTS.map((s,n)=>`<button class="chip" data-slot="${n}" aria-pressed="${n===state.slot}" aria-label="${T[LANG].slot[n]} ${s.h}:00">${s.icon}</button>`).join("");
 }
 function renderRegions(){
-  document.getElementById("regions").innerHTML=REGIONS.map(r=>`<button class="chip" data-reg="${r.id}">${r[LANG]}</button>`).join("");
+  document.getElementById("regions").innerHTML=REGIONS.filter(r=>r.id!=="iwate").map(r=>`<button class="chip" data-reg="${r.id}">${r[LANG]}</button>`).join("");
 }
 function renderLegend(){
   const labels=["0m","0.2","0.4","0.7","1","1.4","2","3+"];
