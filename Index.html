@@ -1,0 +1,1017 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Surf Wave Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<style>
+/* Layout: full-screen world map (OpenStreetMap tiles) with a floating control panel on top and a size legend at the bottom; tap a marker or any spot on the map for the forecast sheet. */
+:root{
+  --bg:#EDF3F3; --surface:#FFFFFF; --ink:#12262E; --muted:#566C74; --line:#D2DEE0;
+  --accent:#0B6E8A; --on-accent:#FFFFFF;
+  --w-on:#C2412D; --w-side:#B7791F; --w-off:#0E8A6B; --w-calm:#7A8F96;
+  --l0:#BFCDD1; --l1:#8DC6D6; --l2:#5CB1C9; --l3:#2F9BB9; --l4:#1D80A8; --l5:#1C5F9B; --l6:#2B3F8E; --l7:#52297C;
+  --f-num:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"BIZ UDPGothic","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0D1A20; --surface:#14262E; --ink:#E6F0F1; --muted:#93AAB2; --line:#26404A;
+    --accent:#5CC3DE; --on-accent:#08222B;
+    --w-on:#F08A74; --w-side:#E3B25D; --w-off:#4FD1A8; --w-calm:#8AA0A7;
+    --l0:#3C525A; --l1:#2D7E93; --l2:#3496B2; --l3:#3DAACB; --l4:#4C94D1; --l5:#6C86DC; --l6:#8C7FE0; --l7:#B27AD8;
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--ink);font:14px/1.5 var(--f-body);-webkit-text-size-adjust:100%}
+button{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+
+/* map */
+#map{position:fixed;inset:0;overflow:hidden;background:var(--bg);touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
+#map:active{cursor:grabbing}
+.tiles{position:absolute;inset:0}
+.tiles img{position:absolute;display:block;max-width:none;-webkit-user-drag:none;pointer-events:none}
+@media (prefers-color-scheme:dark){.tiles{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.88) saturate(.8)}}
+.mks{position:absolute;inset:0;pointer-events:none}
+.sp,.pin{position:absolute;left:0;top:0;pointer-events:auto;cursor:pointer;will-change:transform}
+.attr{position:fixed;left:max(8px,env(safe-area-inset-left,0px));bottom:max(4px,env(safe-area-inset-bottom,0px));z-index:900;font-size:10px;color:var(--muted);background:color-mix(in srgb,var(--surface) 80%,transparent);padding:1px 6px;border-radius:6px}
+.attr a{color:inherit}
+.zoom{position:fixed;right:max(10px,env(safe-area-inset-right,0px));bottom:calc(148px + env(safe-area-inset-bottom,0px));z-index:900;display:grid;gap:6px}
+.zoom button{width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--surface);cursor:pointer;display:grid;place-items:center;box-shadow:0 1px 6px rgba(0,0,0,.2)}
+.zoom svg{width:20px;height:20px;stroke:var(--ink);stroke-width:2.2;stroke-linecap:round;fill:none}
+
+/* top panel */
+.top{position:fixed;z-index:1000;left:0;right:0;top:0;padding:max(8px,env(safe-area-inset-top,0px)) max(8px,env(safe-area-inset-right,0px)) 0 max(8px,env(safe-area-inset-left,0px));pointer-events:none}
+.panel{pointer-events:auto;max-width:560px;margin:0 auto;background:var(--surface);background:color-mix(in srgb,var(--surface) 94%,transparent);border:1px solid var(--line);border-radius:16px;padding:6px;display:grid;gap:6px;box-shadow:0 2px 12px rgba(0,0,0,.2)}
+.r1{display:flex;gap:6px;align-items:center}
+.r1 .sp-grow{flex:1}
+.brand{width:30px;height:30px;flex:none}
+.stamp{font:600 14px var(--f-num);color:var(--muted);letter-spacing:.03em;min-width:36px;text-align:center}
+.chip{min-height:40px;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:3px 6px;cursor:pointer;display:grid;place-items:center;line-height:1.15}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.times{display:grid;grid-template-columns:repeat(3,42px);gap:5px}
+.times .chip svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.regions{display:flex;gap:5px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;margin:0 -2px;padding:0 2px}
+.regions::-webkit-scrollbar{display:none}
+.regions .chip{flex:none;min-height:34px;font-weight:700;font-size:13px;padding:2px 11px;white-space:nowrap}
+.langbtn{min-width:44px;height:40px;padding:0 8px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font:700 14px var(--f-num);cursor:pointer;flex:none}
+.icon-btn{width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer;flex:none}
+.icon-btn svg{width:21px;height:21px;stroke:var(--ink);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.days{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
+.days .chip .d{font:700 17px var(--f-num);letter-spacing:.02em;font-variant-numeric:tabular-nums}
+.days .chip .w{font-size:11px;opacity:.85}
+.days .chip .w.sat{color:#2A74C7}.days .chip .w.sun{color:#C2412D}
+.days .chip[aria-pressed="true"] .w{color:inherit}
+.days .today{display:block;width:5px;height:5px;border-radius:50%;background:currentColor;margin:0 auto}
+@media (max-width:440px){.brand{display:none}}
+
+/* legend */
+.legend{position:fixed;z-index:1000;left:50%;transform:translateX(-50%);bottom:calc(24px + env(safe-area-inset-bottom,0px));width:min(430px,calc(100vw - 20px));background:var(--surface);background:color-mix(in srgb,var(--surface) 94%,transparent);border:1px solid var(--line);border-radius:14px;padding:6px 6px 4px;box-shadow:0 2px 12px rgba(0,0,0,.2)}
+.legend .scale{display:grid;grid-template-columns:repeat(8,1fr);gap:2px}
+.legend .scale div{display:grid;justify-items:center}
+.legend .pic{width:100%;max-width:42px}
+.legend small{font:600 12px var(--f-num);color:var(--muted);font-variant-numeric:tabular-nums}
+.legend .tip{display:flex;align-items:center;justify-content:center;gap:6px;color:var(--muted);font-size:11px;margin-top:2px}
+.legend .tip svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.legend{padding-bottom:6px}
+.legend .tip{position:relative;min-height:30px}
+#iconsw{position:absolute;right:0;bottom:-2px;width:36px;height:30px;border-radius:10px;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer;padding:0}
+#iconsw svg{width:22px;height:22px;stroke:var(--ink)}
+
+/* status */
+#status{pointer-events:none;padding-top:6px}
+.status{pointer-events:auto;max-width:560px;margin:0 auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--w-on);border-radius:12px;background:var(--surface)}
+.status p{margin:0;flex:1 1 200px;font-size:13px}
+.status button{min-height:40px;padding:0 14px;border-radius:12px;border:1px solid var(--accent);background:var(--accent);color:var(--on-accent);font-weight:700;cursor:pointer}
+
+/* pictograms */
+.pic{display:block;width:100%;height:auto;aspect-ratio:1}
+.person{fill:none;stroke:var(--ink);stroke-width:2.6;stroke-linecap:round}
+.person circle{fill:var(--ink);stroke:none}
+.board{fill:var(--ink);opacity:.72}
+.board-line{fill:none;stroke:var(--surface);stroke-width:.9;stroke-linecap:round;opacity:.8}
+.rider{fill:none;stroke:var(--ink);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.rider circle{fill:var(--ink);stroke:none}
+.rboard{fill:var(--ink)}
+.spray{fill:var(--wc);opacity:.6}
+.lip{fill:none;stroke:var(--wc);stroke-width:2.8;stroke-linecap:round}
+.water{fill:var(--wc);opacity:.9}
+.crest{fill:none;stroke:#fff;stroke-opacity:.55;stroke-width:1.2;stroke-linecap:round}
+.lv0{--wc:var(--l0)}.lv1{--wc:var(--l1)}.lv2{--wc:var(--l2)}.lv3{--wc:var(--l3)}
+.lv4{--wc:var(--l4)}.lv5{--wc:var(--l5)}.lv6{--wc:var(--l6)}.lv7{--wc:var(--l7)}.lvx{--wc:var(--w-calm)}
+
+/* markers */
+.dot{display:block;width:16px;height:16px;border-radius:50%;background:var(--wc);border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.3)}
+.pill{display:flex;align-items:center;gap:1px;height:30px;padding:0 9px 0 2px;background:var(--surface);border:2px solid var(--wc);border-radius:16px;box-shadow:0 1px 5px rgba(0,0,0,.3)}
+.pill svg{width:26px;height:26px;flex:none}
+.pill b{font:700 15px var(--f-num);font-variant-numeric:tabular-nums}
+.big{display:grid;justify-items:center;width:78px;padding:2px 3px 3px;background:var(--surface);border:2px solid var(--wc);border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.3)}
+.big svg,.big .blank{width:50px;height:50px}
+.big .blank{border-radius:8px;background:repeating-linear-gradient(135deg,var(--line) 0 5px,transparent 5px 10px)}
+.big b{font:700 17px/1.1 var(--f-num);font-variant-numeric:tabular-nums}
+.big b small{font-size:12px;color:var(--muted);margin-left:1px}
+.big i{font:700 11px/1.3 var(--f-body);font-style:normal;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.big em{font:400 10px/1.25 var(--f-body);font-style:normal;color:var(--muted);max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pinicon{width:28px;height:36px;fill:var(--accent);stroke:#fff;stroke-width:1.6}
+
+/* mini glyphs */
+.mini{display:inline-flex;align-items:center;gap:3px;font:600 14px var(--f-num);font-variant-numeric:tabular-nums;color:var(--ink)}
+.mini svg{width:20px;height:20px;flex:none}
+.mini .u{font-size:11px;color:var(--muted)}
+.mini .stroke{fill:none;stroke:var(--ink);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ring{fill:none;stroke:var(--line);stroke-width:1.4}
+.w-on{--wc2:var(--w-on)}.w-side{--wc2:var(--w-side)}.w-off{--wc2:var(--w-off)}.w-calm{--wc2:var(--w-calm)}
+.warrow{fill:none;stroke:var(--wc2);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.mk{width:9px!important;height:9px!important;fill:var(--wc2);stroke:var(--wc2)}
+.mk.hollow{fill:none;stroke-width:1.6}
+
+/* detail sheet */
+dialog{border:1px solid var(--line);border-radius:18px;background:var(--surface);color:var(--ink);padding:0;width:min(560px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto}
+dialog::backdrop{background:rgba(5,14,18,.55)}
+.dh{display:flex;align-items:center;gap:8px;padding:14px 14px 6px 16px}
+.dh b{font-size:17px;flex:1;min-width:0}
+.dh small{font-size:12px;color:var(--muted);font-weight:400;margin-left:6px}
+.dbody{padding:4px 16px 16px;display:grid;gap:16px}
+.sum{display:grid;grid-template-columns:96px 1fr;gap:12px;align-items:center}
+.ht{display:flex;align-items:baseline;gap:2px}
+.ht b{font:700 56px/1 var(--f-num);letter-spacing:.01em;font-variant-numeric:tabular-nums}
+.ht small{font:600 14px var(--f-num);color:var(--muted)}
+.sum .meta{display:flex;gap:6px 14px;flex-wrap:wrap;margin-top:6px}
+.sum .mini{font-size:17px}.sum .mini svg{width:26px;height:26px}
+.kvs{display:flex;gap:8px;flex-wrap:wrap}
+.kv{display:inline-flex;align-items:center;gap:4px;padding:6px 10px;border:1px solid var(--line);border-radius:12px;background:var(--bg)}
+.kv svg{width:22px;height:22px}
+.kv .stroke{fill:none;stroke:var(--ink);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.kv b{font:700 20px var(--f-num);font-variant-numeric:tabular-nums}
+.kv small,.kv em{font:600 13px var(--f-num);color:var(--muted);font-style:normal}
+.kv em{margin-left:4px;padding-left:6px;border-left:1px solid var(--line)}
+.tidenum{display:flex;justify-content:space-between;font:600 13px var(--f-num);color:var(--muted);margin-top:2px}
+.bars{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;align-items:end}
+.bar3{display:grid;justify-items:center;gap:2px;min-width:0}
+.bar3 .v{font:600 13px var(--f-num);font-variant-numeric:tabular-nums}
+.bar3 .col{display:flex;align-items:flex-end;width:100%;height:96px;border-bottom:1px solid var(--line)}
+.bar3 .col i{display:block;width:100%;border-radius:5px 5px 0 0;background:var(--wc);min-height:2px}
+.bar3 .x,.bar3 .p{font:600 12px var(--f-num);color:var(--muted)}
+.cap{font-size:12px;color:var(--muted);margin:0 0 6px;display:flex;align-items:center;gap:6px}
+.days5{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.days5 button{display:grid;justify-items:center;padding:6px 2px;border:1px solid var(--line);border-radius:12px;background:var(--bg);cursor:pointer;min-width:0}
+.days5 button[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.days5 .pic{width:100%;max-width:56px}
+.days5 .d{font:700 14px var(--f-num)}
+.days5 .m{font:600 13px var(--f-num);color:var(--muted)}
+.loading{height:96px;border-radius:12px;background:repeating-linear-gradient(135deg,var(--line) 0 8px,transparent 8px 16px);opacity:.55}
+.links{display:flex;gap:8px;flex-wrap:wrap}
+.links a{color:var(--ink);text-decoration:none;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:8px 12px;min-height:40px;display:inline-flex;align-items:center;font-size:13px}
+.links a:hover{border-color:var(--accent)}
+.note{margin:0;color:var(--muted);font-size:11.5px}
+</style>
+</head>
+<body>
+<div id="map" aria-label="サーフポイントの地図">
+  <div class="tiles" id="tiles"></div>
+  <div class="mks" id="mks"></div>
+</div>
+
+<div class="top">
+  <div class="panel" id="panel">
+    <div class="r1">
+      <svg class="brand" viewBox="0 0 32 32" aria-hidden="true"><path d="M2 20c4-8 9-8 12-2s8 6 14-6" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/><path d="M2 27c4-5 9-5 12-1s8 4 14-4" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" opacity=".45"/></svg>
+      <div class="times" id="times"></div>
+      <span class="sp-grow"></span>
+      <button class="langbtn" id="langbtn">EN</button>
+      <span class="stamp" id="stamp"></span>
+      <button class="icon-btn" id="reload" aria-label="更新"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v5h-5"/></svg></button>
+    </div>
+    <div class="regions" id="regions"></div>
+    <div class="days" id="days"></div>
+  </div>
+  <div id="status"></div>
+</div>
+
+<div class="zoom">
+  <button id="zin" aria-label="拡大"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button id="zout" aria-label="縮小"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+</div>
+
+<div class="legend" id="legend" role="group" aria-label="波の大きさの目安">
+  <div class="scale" id="scale"></div>
+  <div class="tip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6-5.6-6-10.5a6 6 0 0 1 12 0C18 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.2"/></svg><span id="tiptxt"></span>
+    <button id="iconsw" aria-label="アイコンの切り替え（波の形／人の形）"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18c3-1 5-4 6-8 1 4 3 7 6 8s4-1 6-3"/><circle cx="17" cy="6" r="1.6"/><path d="M17 8v4"/></svg></button>
+  </div>
+</div>
+<div class="attr">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> ／ <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a></div>
+
+<dialog id="dlg" aria-labelledby="dname">
+  <div class="dh"><b id="dname"></b>
+    <button class="icon-btn" id="dclose" aria-label="閉じる"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="dbody" id="dbody"></div>
+</dialog>
+
+<script>
+"use strict";
+/* ---- language (ja / en) ---- */
+const guessLang=()=>((navigator.language||"en").toLowerCase().startsWith("ja")?"ja":"en");
+let LANG=guessLang();
+try{const s=localStorage.getItem("nami-lang");if(s==="ja"||s==="en")LANG=s}catch(e){}
+const T={
+  ja:{title:"波予報マップ",map:"サーフポイントの地図",tip:"地図のどこでもタップ",
+    err:"予報データを取得できませんでした。通信を確認してから、もう一度お試しください。",retry:"再取得",reload:"更新",
+    zin:"拡大",zout:"縮小",close:"閉じる",legend:"波の大きさの目安",iconsw:"アイコンの切り替え（波の形／人の形）",langbtn:"English",
+    sel:"選んだ地点",noFc:"この地点の予報を取得できませんでした。海から離れた場所や、入り江の奥では、データがないことがあります。",
+    note:"数値は沖合の波浪予測モデルの値です。実際の波は、地形・潮・風で変わります。位置は概算です。時刻は各地点の現地時刻です。",
+    size:"波の大きさ",m:"メートル",wind:"風",on:"オンショア",side:"サイド",off:"オフショア",calm:"微風",
+    per:"周期",wdir:"波の進む向き",swell:"うねり",windwave:"風波",sst:"水温",tide:"潮位の動き",max:"最高",min:"最低",local:"現地時刻",
+    lv:["ほぼフラット","くるぶし","ひざ","こし","むね","かた〜あたま","あたまオーバー","ダブル以上"],
+    wd:["日","月","火","水","木","金","土"],slot:["朝","昼","夕"],other:"EN"},
+  en:{title:"Surf Wave Map",map:"Map of surf spots",tip:"Tap anywhere on the map",
+    err:"Could not load the forecast. Please check your connection and try again.",retry:"Retry",reload:"Reload",
+    zin:"Zoom in",zout:"Zoom out",close:"Close",legend:"Wave size guide",iconsw:"Switch icon style (wave / person)",langbtn:"日本語",
+    sel:"Selected point",noFc:"No forecast is available for this point. Places far from the sea or deep inside bays may have no data.",
+    note:"Values come from an offshore wave model. Real waves change with the sea floor, tide and wind. Positions are approximate. Times are local to each spot.",
+    size:"Wave size",m:"metres",wind:"Wind",on:"Onshore",side:"Cross-shore",off:"Offshore",calm:"Light wind",
+    per:"Period",wdir:"Wave travel direction",swell:"Swell",windwave:"Wind waves",sst:"Water temperature",tide:"Tide",max:"high",min:"low",local:"local time",
+    lv:["Flat","Ankle","Knee","Waist","Chest","Shoulder–head","Overhead","Double+"],
+    wd:["Su","Mo","Tu","We","Th","Fr","Sa"],slot:["Morning","Noon","Evening"],other:"JA"}
+};
+const tr=k=>T[LANG][k];
+const LVL=l=>T[LANG].lv[l];
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ---- countries ---- */
+const CC={
+JP:["日本","Japan"],HI:["ハワイ（米国）","Hawaii, USA"],US:["アメリカ","USA"],CA:["カナダ","Canada"],MX:["メキシコ","Mexico"],
+CR:["コスタリカ","Costa Rica"],NI:["ニカラグア","Nicaragua"],SV:["エルサルバドル","El Salvador"],PA:["パナマ","Panama"],
+PE:["ペルー","Peru"],CL:["チリ","Chile"],EC:["エクアドル","Ecuador"],BR:["ブラジル","Brazil"],AR:["アルゼンチン","Argentina"],UY:["ウルグアイ","Uruguay"],
+PR:["プエルトリコ","Puerto Rico"],BB:["バルバドス","Barbados"],
+FR:["フランス","France"],ES:["スペイン","Spain"],PT:["ポルトガル","Portugal"],GB:["イギリス","United Kingdom"],IE:["アイルランド","Ireland"],
+NO:["ノルウェー","Norway"],IS:["アイスランド","Iceland"],DK:["デンマーク","Denmark"],NL:["オランダ","Netherlands"],DE:["ドイツ","Germany"],
+IT:["イタリア","Italy"],MT:["マルタ","Malta"],TR:["トルコ","Türkiye"],IL:["イスラエル","Israel"],
+MA:["モロッコ","Morocco"],SN:["セネガル","Senegal"],CV:["カーボベルデ","Cape Verde"],GH:["ガーナ","Ghana"],LR:["リベリア","Liberia"],ZA:["南アフリカ","South Africa"],MZ:["モザンビーク","Mozambique"],
+MV:["モルディブ","Maldives"],LK:["スリランカ","Sri Lanka"],IN:["インド","India"],MU:["モーリシャス","Mauritius"],RE:["レユニオン（仏）","Réunion"],
+ID:["インドネシア","Indonesia"],PH:["フィリピン","Philippines"],TH:["タイ","Thailand"],VN:["ベトナム","Vietnam"],MY:["マレーシア","Malaysia"],
+TW:["台湾","Taiwan"],KR:["韓国","South Korea"],CN:["中国","China"],
+AU:["オーストラリア","Australia"],NZ:["ニュージーランド","New Zealand"],FJ:["フィジー","Fiji"],PF:["タヒチ（仏領ポリネシア）","Tahiti, French Polynesia"]
+};
+const PREF_EN={"北海道":"Hokkaido","青森":"Aomori","岩手":"Iwate","宮城":"Miyagi","福島":"Fukushima","秋田":"Akita","山形":"Yamagata","新潟":"Niigata","茨城":"Ibaraki","千葉":"Chiba","神奈川":"Kanagawa","静岡":"Shizuoka","愛知":"Aichi","和歌山":"Wakayama","徳島":"Tokushima","高知":"Kochi","福岡":"Fukuoka","宮崎":"Miyazaki","沖縄":"Okinawa"};
+
+/* ---- spots ----
+   Japan: [name, prefecture, lat, lon, face, English]
+   World: [English, Japanese, local-language name (if different), country, lat, lon, face]
+   lat/lon are approximate beach positions. face = direction the beach faces (deg), used only to judge on/offshore wind. */
+const JP=[
+["苫小牧","北海道",42.69,141.86,160,"Tomakomai"],["白老","北海道",42.51,141.34,150,"Shiraoi"],["静内","北海道",42.33,142.37,170,"Shizunai"],["釧路","北海道",42.96,144.38,150,"Kushiro"],["石狩","北海道",43.20,141.30,290,"Ishikari"],
+["八戸","青森",40.52,141.57,90,"Hachinohe"],["三沢","青森",40.71,141.43,90,"Misawa"],
+["種市","岩手",40.43,141.73,90,"Taneichi"],["久慈","岩手",40.19,141.80,90,"Kuji"],["十府ヶ浦","岩手",40.10,141.82,90,"Tofugaura"],["宮古","岩手",39.65,141.99,100,"Miyako"],["山田","岩手",39.47,141.95,100,"Yamada"],["大槌","岩手",39.36,141.93,100,"Otsuchi"],["根浜","岩手",39.275,141.905,100,"Nehama"],["吉浜","岩手",39.10,141.88,110,"Yoshihama"],["大船渡","岩手",39.02,141.82,100,"Ofunato"],["高田松原","岩手",39.01,141.63,120,"Takata-Matsubara"],
+["仙台新港","宮城",38.27,141.02,100,"Sendai Shinko"],["閖上","宮城",38.17,140.94,100,"Yuriage"],
+["四倉","福島",37.10,141.00,100,"Yotsukura"],["勿来","福島",36.86,140.81,100,"Nakoso"],
+["秋田","秋田",39.68,140.01,270,"Akita"],["由良","山形",38.75,139.74,290,"Yura"],["新潟","新潟",37.92,138.97,330,"Niigata"],["直江津","新潟",37.18,138.24,320,"Naoetsu"],
+["日立","茨城",36.60,140.65,90,"Hitachi"],["大洗","茨城",36.31,140.58,90,"Oarai"],["鉾田","茨城",36.11,140.60,90,"Hokota"],["鹿島","茨城",35.95,140.70,90,"Kashima"],["波崎","茨城",35.75,140.85,90,"Hasaki"],
+["飯岡","千葉",35.71,140.85,100,"Iioka"],["志田下","千葉",35.51,140.44,100,"Shidashita"],["白子","千葉",35.43,140.40,100,"Shirako"],["一宮","千葉",35.37,140.40,100,"Ichinomiya"],["太東","千葉",35.27,140.43,100,"Taito"],["御宿","千葉",35.19,140.35,120,"Onjuku"],["鴨川","千葉",35.11,140.10,130,"Kamogawa"],["白浜","千葉",34.90,139.89,190,"Shirahama (Chiba)"],
+["鵠沼","神奈川",35.30,139.47,180,"Kugenuma"],["辻堂","神奈川",35.31,139.44,180,"Tsujido"],["茅ヶ崎","神奈川",35.31,139.39,180,"Chigasaki"],["平塚","神奈川",35.31,139.35,180,"Hiratsuka"],["大磯","神奈川",35.30,139.31,180,"Oiso"],["七里ヶ浜","神奈川",35.30,139.52,180,"Shichirigahama"],["由比ヶ浜","神奈川",35.31,139.54,180,"Yuigahama"],["逗子","神奈川",35.29,139.58,180,"Zushi"],["三浦海岸","神奈川",35.17,139.65,80,"Miura Kaigan"],
+["下田（多々戸）","静岡",34.67,138.97,100,"Shimoda (Tatado)"],["静波","静岡",34.69,138.22,160,"Shizunami"],["御前崎","静岡",34.62,138.23,170,"Omaezaki"],["福田","静岡",34.64,137.89,180,"Fukude"],["浜松","静岡",34.65,137.77,180,"Hamamatsu"],["湖西","静岡",34.68,137.56,180,"Kosai"],
+["伊良湖","愛知",34.58,137.05,180,"Irago"],
+["磯ノ浦","和歌山",34.29,135.13,250,"Isonoura"],["白浜","和歌山",33.68,135.34,240,"Shirahama (Wakayama)"],
+["日和佐","徳島",33.73,134.55,120,"Hiwasa"],["生見","徳島",33.53,134.33,140,"Ikumi"],["宍喰","徳島",33.56,134.30,140,"Shishikui"],
+["桂浜","高知",33.50,133.57,180,"Katsurahama"],
+["糸島","福岡",33.60,130.03,320,"Itoshima"],
+["日向","宮崎",32.43,131.67,90,"Hyuga"],["青島","宮崎",31.80,131.47,100,"Aoshima"],["木崎浜","宮崎",31.89,131.48,90,"Kizakihama"],
+["北谷","沖縄",26.32,127.76,270,"Chatan"]
+];
+const WORLD={
+hi:[
+["Pipeline (Banzai)","パイプライン","","HI",21.665,-158.052,350],
+["Sunset Beach","サンセットビーチ","","HI",21.678,-158.040,340],
+["Waimea Bay","ワイメア・ベイ","","HI",21.641,-158.066,280],
+["Haleiwa","ハレイワ","","HI",21.596,-158.108,340],
+["Waikiki","ワイキキ","","HI",21.272,-157.827,180],
+["Ala Moana Bowls","アラモアナ・ボウルズ","","HI",21.290,-157.853,180],
+["Makaha","マカハ","","HI",21.476,-158.222,270],
+["Honolua Bay","ホノルア・ベイ","","HI",21.014,-156.640,320],
+["Hookipa","ホオキパ","Hoʻokipa","HI",20.935,-156.358,0],
+["Peahi (Jaws)","ピーヒ（ジョーズ）","Peʻahi","HI",20.945,-156.297,10],
+["Hanalei Bay","ハナレイ・ベイ","","HI",22.210,-159.504,0],
+["Poipu Beach","ポイプビーチ","","HI",21.873,-159.455,180],
+["Kahaluu Beach","カハルウビーチ","","HI",19.578,-155.968,270]
+],
+na:[
+["Mavericks","マーベリックス","","US",37.495,-122.497,230],
+["Steamer Lane","スチーマー・レーン","","US",36.951,-122.026,190],
+["Ocean Beach (San Francisco)","オーシャンビーチ（サンフランシスコ）","","US",37.760,-122.513,270],
+["Rincon","リンコン","","US",34.374,-119.477,200],
+["Malibu (Surfrider)","マリブ（サーフライダー）","","US",34.036,-118.678,190],
+["Huntington Beach Pier","ハンティントンビーチ","","US",33.655,-118.001,220],
+["Newport Beach (The Wedge)","ニューポートビーチ（ウェッジ）","","US",33.593,-117.882,190],
+["Trestles","トレッスルズ","","US",33.382,-117.589,220],
+["Oceanside Pier","オーシャンサイド","","US",33.193,-117.386,250],
+["Swami's","スワミズ","","US",33.034,-117.294,250],
+["Windansea","ウィンダンシー","","US",32.829,-117.282,250],
+["Blacks Beach","ブラックスビーチ","","US",32.889,-117.253,270],
+["Cannon Beach","キャノンビーチ","","US",45.892,-123.970,270],
+["Westport","ウェストポート","","US",46.880,-124.110,270],
+["Sebastian Inlet","セバスチャン・インレット","","US",27.860,-80.450,90],
+["Cocoa Beach Pier","ココアビーチ","","US",28.320,-80.600,90],
+["Jacksonville Beach","ジャクソンビルビーチ","","US",30.290,-81.390,90],
+["Folly Beach","フォリービーチ","","US",32.650,-79.940,100],
+["Cape Hatteras","ケープ・ハッテラス","","US",35.250,-75.530,100],
+["Manasquan Inlet","マナスクアン","","US",40.100,-74.030,90],
+["Montauk (Ditch Plains)","モントーク（ディッチプレーンズ）","","US",41.036,-71.930,180],
+["Narragansett Beach","ナラガンセット","","US",41.430,-71.450,180],
+["Tofino (Cox Bay)","トフィーノ（コックスベイ）","","CA",49.100,-125.880,250],
+["Lawrencetown Beach","ローレンスタウン","","CA",44.650,-63.350,150],
+["Scorpion Bay (San Juanico)","スコーピオン・ベイ","San Juanico","MX",26.230,-112.460,250],
+["Sayulita","サユリタ","","MX",20.869,-105.441,250],
+["Puerto Escondido (Zicatela)","プエルト・エスコンディード（ジカテラ）","Playa Zicatela","MX",15.858,-97.063,180],
+["Barra de la Cruz","バラ・デ・ラ・クルス","","MX",15.830,-95.950,180]
+],
+la:[
+["Playa Hermosa (Jacó)","プラヤ・エルモサ（ハコ）","","CR",9.570,-84.580,250],
+["Santa Teresa","サンタテレサ","","CR",9.640,-85.170,250],
+["Tamarindo","タマリンド","","CR",10.300,-85.840,260],
+["Pavones","パボネス","","CR",8.390,-83.140,200],
+["Salsa Brava","サルサ・ブラバ","","CR",9.650,-82.750,90],
+["Popoyo","ポポヨ","","NI",11.470,-86.100,250],
+["Playa Maderas","プラヤ・マデラス","","NI",11.300,-85.910,270],
+["Punta Roca (La Libertad)","プンタ・ロカ（ラ・リベルタ）","","SV",13.480,-89.320,180],
+["El Sunzal","エル・スンサル","","SV",13.490,-89.400,190],
+["Santa Catalina","サンタ・カタリーナ","","PA",7.620,-81.250,180],
+["Chicama (Puerto Malabrigo)","チカマ","Puerto Malabrigo","PE",-7.700,-79.450,290],
+["Máncora","マンコラ","","PE",-4.100,-81.050,270],
+["Cabo Blanco","カボ・ブランコ","","PE",-4.250,-81.240,270],
+["Punta Hermosa","プンタ・エルモサ","","PE",-12.330,-76.820,220],
+["Arica (El Gringo)","アリカ（エル・グリンゴ）","","CL",-18.490,-70.330,250],
+["Iquique (Cavancha)","イキケ（カバンチャ）","","CL",-20.240,-70.140,270],
+["Punta de Lobos","プンタ・デ・ロボス","","CL",-34.430,-72.040,250],
+["Rapa Nui (Hanga Roa)","イースター島（ハンガロア）","Rapa Nui","CL",-27.150,-109.440,270],
+["Montañita","モンタニータ","","EC",-1.830,-80.750,250],
+["Fernando de Noronha (Cacimba do Padre)","フェルナンド・デ・ノローニャ","","BR",-3.850,-32.430,20],
+["Itacaré (Tiririca)","イタカレ","","BR",-14.280,-38.990,100],
+["Saquarema (Itaúna)","サクアレマ","","BR",-22.940,-42.480,180],
+["Arpoador (Rio de Janeiro)","アルポアドール（リオ）","","BR",-22.990,-43.190,180],
+["Maresias","マレジアス","","BR",-23.800,-45.560,160],
+["Florianópolis (Joaquina)","フロリアノポリス（ジョアキナ）","","BR",-27.630,-48.450,100],
+["Garopaba","ガロパバ","","BR",-28.030,-48.620,100],
+["Fortaleza (Praia do Futuro)","フォルタレザ","","BR",-3.750,-38.460,60],
+["Mar del Plata (Playa Grande)","マル・デル・プラタ","","AR",-38.030,-57.530,70],
+["Punta del Diablo","プンタ・デル・ディアブロ","","UY",-34.040,-53.550,100],
+["Rincón (Domes)","リンコン（ドームス）","Rincón","PR",18.350,-67.270,270],
+["Soup Bowl (Bathsheba)","スープボウル（バルバドス）","","BB",13.210,-59.520,90]
+],
+eu:[
+["Hossegor (La Gravière)","オセゴール（ラ・グラヴィエール）","","FR",43.670,-1.440,270],
+["Biarritz (Grande Plage)","ビアリッツ","","FR",43.484,-1.559,300],
+["Guéthary (Parlementia)","ゲタリー","","FR",43.425,-1.615,310],
+["Lacanau","ラカノー","","FR",45.000,-1.200,270],
+["Mimizan","ミミザン","","FR",44.210,-1.290,270],
+["La Torche","ラ・トルシュ","","FR",47.840,-4.350,250],
+["Mundaka","ムンダカ","","ES",43.408,-2.698,340],
+["Zarautz","サラウツ","","ES",43.285,-2.170,350],
+["Sopelana","ソペラナ","","ES",43.380,-2.980,330],
+["Somo","ソモ","","ES",43.460,-3.740,350],
+["Pantín (Valdoviño)","パンティン","","ES",43.640,-8.060,350],
+["El Palmar (Cádiz)","エル・パルマル（カディス）","","ES",36.240,-6.070,220],
+["El Cotillo (Fuerteventura)","エル・コティージョ（フエルテベントゥラ）","","ES",28.690,-14.010,290],
+["La Santa (Lanzarote)","ラ・サンタ（ランサローテ）","","ES",29.050,-13.650,340],
+["Peniche (Supertubos)","ペニシェ（スーパーチューボス）","","PT",39.345,-9.364,270],
+["Nazaré (Praia do Norte)","ナザレ","","PT",39.606,-9.085,270],
+["Ericeira (Ribeira d'Ilhas)","エリセイラ","","PT",38.987,-9.419,270],
+["Guincho","ギンショ","","PT",38.730,-9.470,270],
+["Carcavelos","カルカヴェロス","","PT",38.680,-9.340,190],
+["Costa da Caparica","コスタ・ダ・カパリカ","","PT",38.640,-9.240,250],
+["Sagres (Tonel)","サグレス","","PT",37.010,-8.940,220],
+["Arrifana","アリファナ","","PT",37.290,-8.870,270],
+["Jardim do Mar (Madeira)","ジャルディン・ド・マール（マデイラ）","","PT",32.740,-17.200,190],
+["Ribeira Grande (Azores)","アゾレス諸島（サンミゲル）","","PT",37.830,-25.550,0],
+["Fistral Beach (Newquay)","フィストラル（ニューキー）","","GB",50.416,-5.100,270],
+["Croyde Bay","クロイド","","GB",51.130,-4.240,270],
+["Thurso East","サーソー・イースト","","GB",58.598,-3.520,350],
+["Tynemouth (Longsands)","タインマス","","GB",55.020,-1.420,90],
+["Eoropie (Isle of Lewis)","ルイス島（エオロピー）","","GB",58.500,-6.230,0],
+["Bundoran (The Peak)","バンドラン","","IE",54.480,-8.280,330],
+["Lahinch","ラヒンチ","","IE",52.930,-9.350,270],
+["Mullaghmore Head","マラモア・ヘッド","","IE",54.460,-8.450,330],
+["Easkey","イースキー","","IE",54.290,-8.960,360],
+["Unstad (Lofoten)","ウンスタッド（ロフォーテン）","","NO",68.260,13.600,270],
+["Hoddevik (Stad)","ホッデヴィーク","","NO",62.050,5.180,290],
+["Þorlákshöfn","トルラウクスヘプン","Þorlákshöfn","IS",63.850,-21.380,180],
+["Klitmøller (Cold Hawaii)","クリットモラー","","DK",57.040,8.500,290],
+["Scheveningen","スケベニンゲン","","NL",52.110,4.270,290],
+["Westerland (Sylt)","ジルト島（ヴェスターラント）","","DE",54.900,8.300,280],
+["Capo Mannu (Sardinia)","カポ・マンヌ（サルデーニャ）","","IT",40.030,8.400,280],
+["Għajn Tuffieħa","ガジン・トゥッフィーハ","","MT",35.930,14.340,300],
+["Kilyos (Istanbul)","クルヨス（イスタンブール）","","TR",41.250,29.020,20],
+["Hilton Beach (Tel Aviv)","テルアビブ（ヒルトンビーチ）","חוף הילטון","IL",32.090,34.770,270]
+],
+af:[
+["Anchor Point (Taghazout)","アンカーポイント（タガズート）","","MA",30.540,-9.710,290],
+["Imsouane","イムスアン","","MA",30.840,-9.820,260],
+["Essaouira","エッサウィラ","","MA",31.500,-9.780,280],
+["Safi (Lighthouse)","サフィ","","MA",32.300,-9.260,290],
+["Ngor / Almadies (Dakar)","ダカール（ンゴール）","","SN",14.750,-17.520,300],
+["Ponta Preta (Sal)","サル島（ポンタ・プレタ）","","CV",16.570,-22.930,220],
+["Busua","ブスア","","GH",4.800,-1.930,180],
+["Robertsport","ロバーツポート","","LR",6.750,-11.370,230],
+["Jeffreys Bay (Supertubes)","ジェフリーズ・ベイ","","ZA",-34.050,24.930,100],
+["Muizenberg","ムイゼンバーグ","","ZA",-34.110,18.470,180],
+["Dungeons (Hout Bay)","ダンジョンズ（ハウトベイ）","","ZA",-34.050,18.350,250],
+["Kommetjie (Long Beach)","コメッチー","","ZA",-34.140,18.320,250],
+["Durban (North Beach)","ダーバン","","ZA",-29.850,31.040,90],
+["Ballito","バリト","","ZA",-29.540,31.220,90],
+["Nahoon Reef (East London)","ナホーン・リーフ","","ZA",-32.990,27.950,90],
+["Cape St Francis","ケープ・セントフランシス","","ZA",-34.200,24.840,150],
+["Tofo","トーフォ","","MZ",-23.850,35.550,100]
+],
+io:[
+["Chickens (Himmafushi)","チキンズ（ヒンマフシ）","","MV",4.300,73.670,90],
+["Arugam Bay","アルガム・ベイ","","LK",6.840,81.840,100],
+["Weligama","ウェリガマ","","LK",5.970,80.430,180],
+["Hikkaduwa","ヒッカドゥワ","","LK",6.130,80.100,270],
+["Kovalam (Lighthouse Beach)","コヴァラム","","IN",8.400,76.980,270],
+["Varkala","ヴァルカラ","","IN",8.730,76.700,270],
+["Mulki","ムルキ","","IN",13.090,74.790,270],
+["One Eye (Le Morne)","ル・モーン（モーリシャス）","","MU",-20.470,57.310,220],
+["Saint-Leu (Réunion)","サン・ルー（レユニオン）","","RE",-21.170,55.280,270]
+],
+as:[
+["Uluwatu","ウルワツ","","ID",-8.815,115.089,250],
+["Padang Padang","パダンパダン","","ID",-8.811,115.101,250],
+["Kuta Beach (Bali)","クタビーチ（バリ）","","ID",-8.723,115.168,250],
+["Canggu (Batu Bolong)","チャングー（バトゥボロン）","","ID",-8.655,115.130,190],
+["Keramas","クラマス","","ID",-8.590,115.350,140],
+["Medewi","メデウィ","","ID",-8.400,114.810,180],
+["G-Land (Plengkung)","Gランド（プレンクン）","","ID",-8.728,114.340,190],
+["Lakey Peak (Sumbawa)","レイキーピーク（スンバワ）","","ID",-8.840,118.400,190],
+["Selong Belanak (Lombok)","セロンブラナック（ロンボク）","","ID",-8.920,116.180,190],
+["Macaronis (Mentawai)","マカロニズ（ムンタワイ）","","ID",-2.100,99.600,270],
+["Lagundri Bay (Nias)","ラグンドリ・ベイ（ニアス）","","ID",0.560,97.770,200],
+["Cloud 9 (Siargao)","クラウド9（シアルガオ）","","PH",9.800,126.160,90],
+["Baler (Sabang)","バレル（サバン）","","PH",15.760,121.600,90],
+["San Juan (La Union)","ラ・ユニオン（サンファン）","","PH",16.670,120.330,270],
+["Kata Beach (Phuket)","カタビーチ（プーケット）","","TH",7.820,98.300,270],
+["My Khe (Da Nang)","ミーケビーチ（ダナン）","Mỹ Khê","VN",16.050,108.250,90],
+["Cherating","チェラティン","","MY",4.120,103.400,90],
+["Wushih Harbor (Toucheng)","烏石港（頭城）","烏石港","TW",24.860,121.840,90],
+["Fulong","福隆","福隆","TW",25.020,121.940,90],
+["Jukdo Beach (Yangyang)","竹島ビーチ（襄陽）","죽도해변","KR",37.970,128.760,90],
+["Songjeong (Busan)","松亭（釜山）","송정해수욕장","KR",35.180,129.200,130],
+["Jungmun (Jeju)","中文（済州島）","중문색달해변","KR",33.245,126.410,180],
+["Riyue Bay (Wanning, Hainan)","日月湾（海南島）","日月湾","CN",18.620,110.530,100]
+],
+oc:[
+["Snapper Rocks","スナッパーロックス","","AU",-28.165,153.550,90],
+["Burleigh Heads","バーレイヘッズ","","AU",-28.090,153.460,90],
+["Byron Bay (The Pass)","バイロンベイ","","AU",-28.640,153.630,30],
+["Noosa (First Point)","ヌーサ","","AU",-26.380,153.090,40],
+["Alexandra Headland","アレクサンドラ・ヘッドランド","","AU",-26.670,153.110,90],
+["Bondi Beach","ボンダイビーチ","","AU",-33.891,151.277,90],
+["Manly","マンリー","","AU",-33.797,151.289,90],
+["Cronulla","クロヌラ","","AU",-34.050,151.160,100],
+["Merewether (Newcastle)","メリウェザー（ニューカッスル）","","AU",-32.945,151.770,90],
+["Bells Beach","ベルズビーチ","","AU",-38.370,144.280,190],
+["Phillip Island (Woolamai)","フィリップ島（ウーラマイ）","","AU",-38.530,145.350,150],
+["Margaret River (Surfers Point)","マーガレット・リバー","","AU",-33.974,114.999,270],
+["Yallingup","ヤリンガップ","","AU",-33.640,115.020,270],
+["Trigg Beach (Perth)","トリッグビーチ（パース）","","AU",-31.870,115.750,280],
+["Raglan (Manu Bay)","ラグラン（マヌ・ベイ）","","NZ",-37.810,174.820,290],
+["Piha","ピハ","","NZ",-36.950,174.470,290],
+["Mount Maunganui","マウント・マウンガヌイ","","NZ",-37.630,176.180,30],
+["Wainui (Gisborne)","ワイヌイ（ギズボーン）","","NZ",-38.680,178.060,90],
+["Fitzroy Beach (New Plymouth)","フィッツロイビーチ（ニュープリマス）","","NZ",-39.050,174.040,330],
+["Kaikōura","カイコウラ","","NZ",-42.400,173.690,90],
+["Sumner (Christchurch)","サムナー（クライストチャーチ）","","NZ",-43.570,172.770,90],
+["St Clair (Dunedin)","セントクレア（ダニーデン）","","NZ",-45.910,170.490,150],
+["Cloudbreak (Tavarua)","クラウドブレイク（フィジー）","","FJ",-17.880,177.190,180],
+["Teahupoʻo (Tahiti)","ティアフポー（タヒチ）","Teahupoʻo","PF",-17.860,-149.260,180]
+]
+};
+const SPOTS=[];
+JP.forEach(([ja,pref,lat,lon,face,en])=>SPOTS.push({ja,en,loc:ja,cc:"JP",pref,reg:"jp",lat,lon,face}));
+Object.keys(WORLD).forEach(reg=>WORLD[reg].forEach(([en,ja,loc,cc,lat,lon,face])=>SPOTS.push({ja,en,loc,cc,pref:"",reg,lat,lon,face})));
+SPOTS.forEach((s,i)=>{s.i=i});
+const SIG=(()=>{const str=SPOTS.map(s=>s.en+s.lat).join("|");let h=0;for(let i=0;i<str.length;i++)h=(h*31+str.charCodeAt(i))|0;return SPOTS.length+":"+h})();
+let CUSTOM=null;
+const spotOf=k=>k==="c"?CUSTOM:SPOTS[k];
+
+const nameOf=s=>s.i==="c"?tr("sel"):(LANG==="ja"?s.ja:s.en);
+const altsOf=s=>{
+  if(s.i==="c")return [];
+  const a=nameOf(s),other=LANG==="ja"?s.en:s.ja;
+  return [...new Set([s.loc,other].filter(x=>x&&x!==a))];
+};
+const ccName=cc=>{const c=CC[cc];return c?c[LANG==="ja"?0:1]:""};
+const subOf=s=>s.i==="c"?"":(s.cc==="JP"?(LANG==="ja"?s.pref:PREF_EN[s.pref]):ccName(s.cc));
+const fmtLL=(lat,lon)=>Math.abs(lat).toFixed(3)+"°"+(lat>=0?"N":"S")+" "+Math.abs(lon).toFixed(3)+"°"+(lon>=0?"E":"W");
+
+/* ---- regions (map jump chips) ---- */
+const REGIONS=[
+{id:"world",ja:"世界",en:"World",lat:18,lon:10,sa:125,so:360},
+{id:"iwate",ja:"岩手",en:"Iwate",lat:39.7,lon:141.95,sa:1.75,so:1.0},
+{id:"jp",ja:"日本",en:"Japan",lat:35.8,lon:134.5,sa:22,so:25},
+{id:"hi",ja:"ハワイ",en:"Hawaii",lat:20.6,lon:-157.4,sa:3.6,so:5.6},
+{id:"na",ja:"北米",en:"N. America",lat:41,lon:-98,sa:42,so:80},
+{id:"la",ja:"中南米",en:"Latin America",lat:-8,lon:-68,sa:85,so:75},
+{id:"eu",ja:"欧州",en:"Europe",lat:45,lon:2,sa:44,so:70},
+{id:"af",ja:"アフリカ",en:"Africa",lat:-2,lon:12,sa:72,so:85},
+{id:"io",ja:"インド洋",en:"Indian Ocean",lat:-5,lon:70,sa:45,so:42},
+{id:"as",ja:"アジア",en:"Asia",lat:14,lon:112,sa:52,so:45},
+{id:"oc",ja:"オセアニア",en:"Oceania",lat:-28,lon:162,sa:42,so:105}
+];
+
+/* ---- links to official / local sites (top pages only): [ja, en, url] ---- */
+const US_SITES=[["NOAA NDBC","NOAA NDBC","https://www.ndbc.noaa.gov/"],["CDIP","CDIP","https://cdip.ucsd.edu/"]];
+const SITES={
+JP:[["気象庁 波浪","JMA waves","https://www.data.jma.go.jp/waveinf/tile/jp/"],["NOWPHAS 実況","NOWPHAS (live)","https://www.mlit.go.jp/kowan/nowphas/"]],
+HI:US_SITES,US:US_SITES,PR:US_SITES,
+CA:[["Environment Canada","Environment Canada","https://weather.gc.ca/marine/"]],
+MX:[["SMN México","SMN Mexico","https://smn.conagua.gob.mx/"]],
+PE:[["DHN Perú","DHN Peru","https://www.dhn.mil.pe/"]],
+CL:[["SHOA Chile","SHOA Chile","https://www.shoa.cl/"]],
+BR:[["CPTEC/INPE","CPTEC/INPE","https://www.cptec.inpe.br/"]],
+AR:[["SMN Argentina","SMN Argentina","https://www.smn.gob.ar/"]],
+UY:[["INUMET","INUMET","https://www.inumet.gub.uy/"]],
+FR:[["Météo-France","Météo-France","https://meteofrance.com/"],["Surf Report","Surf Report","https://www.surf-report.com/"]],
+PF:[["Météo-France Polynésie","Météo-France Polynesia","https://meteofrance.pf/"]],
+RE:[["Météo-France","Météo-France","https://meteofrance.com/"]],
+ES:[["Puertos del Estado","Puertos del Estado","https://www.puertos.es/"],["AEMET","AEMET","https://www.aemet.es/"]],
+PT:[["IPMA","IPMA","https://www.ipma.pt/"]],
+GB:[["Met Office","Met Office","https://www.metoffice.gov.uk/"]],
+IE:[["Met Éireann","Met Éireann","https://www.met.ie/"]],
+NO:[["Yr","Yr","https://www.yr.no/"]],
+IS:[["Veðurstofa Íslands","Icelandic Met Office","https://en.vedur.is/"]],
+DK:[["DMI","DMI","https://www.dmi.dk/"]],
+NL:[["KNMI","KNMI","https://www.knmi.nl/"]],
+DE:[["DWD","DWD","https://www.dwd.de/"]],
+IT:[["Aeronautica Militare","Italian Air Force Met","https://www.meteoam.it/"]],
+TR:[["MGM","MGM","https://www.mgm.gov.tr/"]],
+IL:[["Israel Meteorological Service","Israel Meteorological Service","https://ims.gov.il/"]],
+MA:[["Météo Maroc","Météo Maroc","https://www.marocmeteo.ma/"]],
+ZA:[["Wavescape","Wavescape","https://wavescape.co.za/"],["SA Weather Service","SA Weather Service","https://www.weathersa.co.za/"]],
+IN:[["INCOIS","INCOIS","https://incois.gov.in/"]],
+LK:[["Dept. of Meteorology","Dept. of Meteorology","https://www.meteo.gov.lk/"]],
+ID:[["BMKG","BMKG","https://www.bmkg.go.id/"]],
+PH:[["PAGASA","PAGASA","https://www.pagasa.dost.gov.ph/"]],
+TH:[["TMD","TMD","https://www.tmd.go.th/"]],
+VN:[["NCHMF","NCHMF","https://www.nchmf.gov.vn/"]],
+MY:[["MetMalaysia","MetMalaysia","https://www.met.gov.my/"]],
+TW:[["中央気象署","CWA Taiwan","https://www.cwa.gov.tw/"]],
+KR:[["気象庁（韓国）","KMA Korea","https://www.kma.go.kr/"]],
+CN:[["国家海洋環境予報センター","NMEFC China","https://www.nmefc.cn/"]],
+AU:[["BOM 海洋","BOM Marine","https://www.bom.gov.au/marine/"]],
+NZ:[["MetService","MetService","https://www.metservice.com/marine"]],
+FJ:[["Fiji Met Service","Fiji Met Service","https://www.met.gov.fj/"]]
+};
+
+/* ---- size scale ---- */
+const TH=[0.2,0.4,0.7,1.0,1.4,2.0,3.0];
+const LV_Y=[59.5,56.5,52,46,40,31,20,9];
+const level=h=>TH.filter(t=>h>=t).length;
+const pad=n=>String(n).padStart(2,"0");
+
+/* icon style: "wave" = surfer riding a wave that grows with size, "body" = standing figure measured against the water line */
+let ICON="wave";
+try{ICON=localStorage.getItem("nami-icon")==="body"?"body":"wave"}catch(e){}
+const WH=[2,8,14,20,27,35,44,52];
+function waveSVG(l){
+  const b=60,H=WH[l];
+  const p0=[0,b],p1=[10,b],p2=[18,b-.15*H],p3=[25,b-.5*H],t=.86,u=1-t;
+  const px=u*u*u*p0[0]+3*u*u*t*p1[0]+3*u*t*t*p2[0]+t*t*t*p3[0];
+  const py=u*u*u*p0[1]+3*u*u*t*p1[1]+3*u*t*t*p2[1]+t*t*t*p3[1];
+  const dx=3*u*u*(p1[0]-p0[0])+6*u*t*(p2[0]-p1[0])+3*t*t*(p3[0]-p2[0]);
+  const dy=3*u*u*(p1[1]-p0[1])+6*u*t*(p2[1]-p1[1])+3*t*t*(p3[1]-p2[1]);
+  const ang=Math.atan2(dy,dx)*180/Math.PI;
+  const d=`M0 ${b} C 10 ${b}, 18 ${b-.15*H}, 25 ${b-.5*H} S 33 ${b-H}, 38 ${b-H} C 45 ${b-H}, 43 ${b-.5*H}, 51 ${b-.18*H} S 60 ${b}, 64 ${b}`;
+  const spray=l>=5?`<circle class="spray" cx="36" cy="${b-H-3.5}" r="1.5"/><circle class="spray" cx="41" cy="${b-H-2}" r="1.1"/><circle class="spray" cx="32.5" cy="${b-H-5.5}" r="1"/>`:"";
+  return `<svg viewBox="0 0 64 64" class="pic lv${l}" role="img" aria-label="${tr("size")} ${LVL(l)}"><path class="water" d="${d} V64 H0 Z"/><path class="crest" d="${d}"/>${l>=3?`<path class="lip" d="M38.5 ${b-H} C 33.5 ${b-H-1.8}, 29.2 ${b-H+.4}, 29.6 ${b-H+5.4}"/>`:""}${spray}<g transform="translate(${px.toFixed(1)} ${(py-.5).toFixed(1)}) rotate(${(ang*.7).toFixed(0)}) scale(1.25)"><path class="rboard" d="M-8.5 0Q0 2.4 8.5 0Q0 -1.4 -8.5 0Z"/><g class="rider"><circle cx="1" cy="-13" r="2"/><path d="M.5 -11L-1 -6.5M-1 -6.5L-4 -3.5L-3 -.4M-1 -6.5L2 -3.8L3 -.4M.2 -10L5 -8M.2 -10L-4.5 -8.5"/></g></g></svg>`;
+}
+const sizeSVG=l=>ICON==="wave"?waveSVG(l):bodySVG(l);
+function bodySVG(l){
+  const y=LV_Y[l];
+  const top=`M0 ${y} C 9 ${y-2.2} 14 ${y+2.2} 23 ${y} S 41 ${y-2.2} 51 ${y} S 61 ${y+2} 64 ${y}`;
+  return `<svg viewBox="0 0 64 64" class="pic lv${l}" role="img" aria-label="${tr("size")} ${LVL(l)}"><path class="board" d="M37 17C41.2 24 41.6 50 40.6 60H33.4C32.4 50 32.8 24 37 17Z"/><path class="board-line" d="M37 22V58"/><g class="person"><circle cx="22" cy="30" r="3.7"/><path d="M22 34.5V47M22 47L18.5 60M22 47L25.5 60M22 38L16.5 43M22 38L32 41.5"/></g><path class="water" d="${top} V64 H0 Z"/><path class="crest" d="${top}"/></svg>`;
+}
+function periodSVG(p){
+  const n=p<6?1:p<9?2:p<12?3:4;
+  let d="";
+  for(let k=0;k<n;k++){const y=n===1?11:5+k*(12/(n-1)); d+=`M2.5 ${y.toFixed(1)} q3.75 -4 7.5 0 t7.5 0 `;}
+  return `<svg viewBox="0 0 20 20" aria-hidden="true"><path class="stroke" d="${d}"/></svg>`;
+}
+function dirSVG(travel){
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><circle class="ring" cx="12" cy="12" r="10"/><path d="M12 1.6v2.4" class="stroke"/><g transform="rotate(${travel.toFixed(0)} 12 12)"><path class="stroke" d="M12 18V6M7.5 10.5L12 6l4.5 4.5"/></g></svg>`;
+}
+const angDiff=(a,b)=>{let d=Math.abs(((a-b)%360+360)%360);return d>180?360-d:d};
+function windChip(spd,from,face){
+  if(spd==null||from==null||face==null)return "";
+  const rel=angDiff(from,face);
+  const kind=spd<2?"calm":rel<65?"on":rel<115?"side":"off";
+  const mk={
+    off:'<svg class="mk" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="4"/></svg>',
+    side:'<svg class="mk" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 1L9.5 9H.5Z"/></svg>',
+    on:'<svg class="mk hollow" viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5L8.5 8.5M8.5 1.5L1.5 8.5"/></svg>',
+    calm:'<svg class="mk hollow" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="3.5"/></svg>'
+  }[kind];
+  const lbl=tr(kind==="on"?"on":kind==="side"?"side":kind==="off"?"off":"calm");
+  return `<span class="mini w-${kind}" aria-label="${tr("wind")} ${lbl} ${spd.toFixed(0)} m/s"><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="ring" cx="12" cy="12" r="10"/><g transform="rotate(${((from+180)%360).toFixed(0)} 12 12)"><path class="warrow" d="M12 19V6M7.5 10.5L12 6l4.5 4.5"/></g></svg>${spd.toFixed(0)}<span class="u">m/s</span>${mk}</span>`;
+}
+function bearing(lat1,lon1,lat2,lon2){
+  const r=Math.PI/180;
+  const y=Math.sin((lon2-lon1)*r)*Math.cos(lat2*r);
+  const x=Math.cos(lat1*r)*Math.sin(lat2*r)-Math.sin(lat1*r)*Math.cos(lat2*r)*Math.cos((lon2-lon1)*r);
+  return (Math.atan2(y,x)/r+360)%360;
+}
+
+/* ---- dates ---- */
+function addDays(s,n){const [y,m,d]=s.split("-").map(Number);const t=new Date(Date.UTC(y,m-1,d+n));return t.getUTCFullYear()+"-"+pad(t.getUTCMonth()+1)+"-"+pad(t.getUTCDate())}
+const TODAY=new Date().toLocaleDateString("sv-SE");
+const DAYS=[0,1,2,3,4].map(n=>addDays(TODAY,n));
+const SLOTS=[
+  {h:6,icon:'<svg viewBox="0 0 24 24"><path d="M3 18h18M6.5 18a5.5 5.5 0 0 1 11 0M12 5v3M4.6 10.6l2 2M19.4 10.6l-2 2"/><path d="M9 4.5l3-2.5 3 2.5"/></svg>'},
+  {h:12,icon:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg>'},
+  {h:17,icon:'<svg viewBox="0 0 24 24"><path d="M3 18h18M6.5 18a5.5 5.5 0 0 1 11 0M12 5v3M4.6 10.6l2 2M19.4 10.6l-2 2"/><path d="M9 6.5l3 2.5 3-2.5"/></svg>'}
+];
+const nowH=new Date().getHours();
+const state={day:0,slot:nowH<10?0:nowH<15?1:2,open:null};
+
+/* ---- data ---- */
+let DATA={},ERR=false;
+const arr=x=>Array.isArray(x)?x:[x];
+const pack=o=>({h:o.hourly,lat:o.latitude,lon:o.longitude});
+/* every series starts at 00:00 local time of the spot ("today"), so day*24+hour indexes it directly */
+function pv(key,part,k,day,hour){
+  const d=DATA[key]&&DATA[key][part];
+  if(!d)return null;
+  const v=d.h[k]&&d.h[k][day*24+hour];
+  return v==null?null:v;
+}
+const wave=(key,k,d,h)=>pv(key,"m",k,d,h);
+const wind=(key,k,d,h)=>pv(key,"w",k,d,h);
+const tide=(key,k,d,h)=>pv(key,"t",k,d,h);
+
+async function getJSON(url){
+  const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),25000);
+  try{
+    const res=await fetch(url,{signal:ctl.signal});
+    if(!res.ok)throw new Error("HTTP "+res.status);
+    return await res.json();
+  }finally{clearTimeout(t)}
+}
+const CK="nami-world-v1";
+function cacheGet(){try{const c=JSON.parse(localStorage.getItem(CK)||"null");if(c&&Date.now()-c.t<3*3600e3&&c.sig===SIG&&c.day===TODAY)return c}catch(e){}return null}
+function cachePut(raw){try{localStorage.setItem(CK,JSON.stringify({t:Date.now(),sig:SIG,day:TODAY,raw}))}catch(e){}}
+const hhmm=ms=>new Date(ms).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",hour12:false});
+const slim=o=>({latitude:o.latitude,longitude:o.longitude,hourly:{wave_height:o.hourly.wave_height,wave_period:o.hourly.wave_period,wave_direction:o.hourly.wave_direction}});
+function applyBulk(raw){
+  DATA={};
+  raw.forEach((o,i)=>{if(o)DATA[i]={m:pack(o)}});
+}
+const CHUNK=45;
+async function loadBulk(force){
+  ERR=false;
+  const stamp=document.getElementById("stamp");
+  if(!force){
+    const c=cacheGet();
+    if(c){applyBulk(c.raw);stamp.textContent=hhmm(c.t);render();return}
+  }
+  stamp.textContent="…";DATA={};
+  const raw=new Array(SPOTS.length).fill(null);let fail=0;
+  const starts=[];for(let a=0;a<SPOTS.length;a+=CHUNK)starts.push(a);
+  await Promise.all(starts.map(async a=>{
+    const ps=SPOTS.slice(a,a+CHUNK);
+    try{
+      const lat=ps.map(s=>s.lat).join(","),lon=ps.map(s=>s.lon).join(",");
+      const r=arr(await getJSON(`https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&timezone=auto&forecast_days=5&cell_selection=sea&hourly=wave_height,wave_period,wave_direction`));
+      if(r.length!==ps.length)throw new Error("count");
+      r.forEach((o,k)=>{const x=slim(o);raw[a+k]=x;DATA[a+k]={m:pack(x)}});
+      refreshIcons();
+    }catch(e){fail++}
+  }));
+  if(fail){ERR=true;stamp.textContent=""}
+  else{cachePut(raw);stamp.textContent=hhmm(Date.now())}
+  render();
+}
+async function loadDetail(key){
+  const s=spotOf(key);
+  if(!s)return;
+  if(DATA[key]&&DATA[key].full)return;
+  const q=`latitude=${s.lat}&longitude=${s.lon}&timezone=auto&forecast_days=5`;
+  const [mr,wr,tr]=await Promise.allSettled([
+    getJSON(`https://marine-api.open-meteo.com/v1/marine?${q}&cell_selection=sea&hourly=wave_height,wave_period,wave_direction,swell_wave_height,swell_wave_period,wind_wave_height`),
+    getJSON(`https://api.open-meteo.com/v1/forecast?${q}&hourly=wind_speed_10m,wind_direction_10m&wind_speed_unit=ms`),
+    getJSON(`https://marine-api.open-meteo.com/v1/marine?${q}&cell_selection=sea&hourly=sea_level_height_msl,sea_surface_temperature`)
+  ]);
+  if(CUSTOM===null&&key==="c")return;
+  if(key==="c"&&spotOf("c")!==s)return;
+  const one=r=>r.status==="fulfilled"?pack(arr(r.value)[0]):null;
+  const m=one(mr);
+  DATA[key]=Object.assign(DATA[key]||{},{m:m||(DATA[key]&&DATA[key].m)||null,w:one(wr),t:one(tr),full:true,failed:!m&&!(DATA[key]&&DATA[key].m)});
+  if(key==="c"&&m&&s.face==null)s.face=bearing(s.lat,s.lon,m.lat,m.lon);
+  if(state.open===key)openDetail(key);
+}
+
+/* ---- map engine (Web Mercator, OpenStreetMap tiles) ---- */
+const mapEl=document.getElementById("map"),tilesEl=document.getElementById("tiles"),mksEl=document.getElementById("mks");
+const TILE="https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+let W=innerWidth,H=innerHeight;
+const view={lat:39.6,lon:142,z:8.8};
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const clampZ=z=>clamp(z,1.4,17);
+const wrapLon=l=>((l+540)%360+360)%360-180;
+const wsize=z=>256*Math.pow(2,z);
+function project(lat,lon,z){const s=wsize(z),sin=Math.sin(lat*Math.PI/180);return{x:(lon+180)/360*s,y:(0.5-Math.log((1+sin)/(1-sin))/(4*Math.PI))*s}}
+function unproject(x,y,z){const s=wsize(z),n=Math.PI-2*Math.PI*y/s;return{lat:180/Math.PI*Math.atan(0.5*(Math.exp(n)-Math.exp(-n))),lon:x/s*360-180}}
+function toScreen(lat,lon){const c=project(view.lat,view.lon,view.z),p=project(lat,lon,view.z);return{x:p.x-c.x+W/2,y:p.y-c.y+H/2}}
+function geoAt(sx,sy){const c=project(view.lat,view.lon,view.z);return unproject(c.x+(sx-W/2),c.y+(sy-H/2),view.z)}
+function anchor(g,sx,sy,z){
+  view.z=clampZ(z);
+  const p=project(g.lat,g.lon,view.z);
+  const c=unproject(p.x-(sx-W/2),p.y-(sy-H/2),view.z);
+  view.lat=clamp(c.lat,-80,80);view.lon=wrapLon(c.lon);
+}
+const tileCache=new Map();
+function drawTiles(){
+  const zi=clamp(Math.round(view.z),2,19),scale=Math.pow(2,view.z-zi);
+  const c=project(view.lat,view.lon,zi),n=Math.pow(2,zi);
+  const x0=Math.floor((c.x-W/2/scale)/256),x1=Math.floor((c.x+W/2/scale)/256);
+  const y0=Math.floor((c.y-H/2/scale)/256),y1=Math.floor((c.y+H/2/scale)/256);
+  if((x1-x0+1)*(y1-y0+1)>120)return;
+  const keep=new Set();
+  for(let ty=Math.max(0,y0);ty<=Math.min(n-1,y1);ty++){
+    for(let tx=x0;tx<=x1;tx++){
+      const wx=((tx%n)+n)%n,key=zi+"/"+wx+"/"+ty+"@"+tx;
+      let img=tileCache.get(key);
+      if(!img){
+        img=new Image();img.alt="";img.decoding="async";
+        img.onerror=()=>{img.style.visibility="hidden"};
+        img.src=TILE.replace("{z}",zi).replace("{x}",wx).replace("{y}",ty);
+        tilesEl.appendChild(img);tileCache.set(key,img);
+      }
+      img.style.left=((tx*256-c.x)*scale+W/2).toFixed(1)+"px";
+      img.style.top=((ty*256-c.y)*scale+H/2).toFixed(1)+"px";
+      img.style.width=img.style.height=(256*scale+0.6).toFixed(1)+"px";
+      keep.add(key);
+    }
+  }
+  for(const [k,img] of tileCache){if(!keep.has(k)){img.remove();tileCache.delete(k)}}
+}
+
+/* ---- markers ---- */
+const markers=SPOTS.map(s=>{
+  const el=document.createElement("div");
+  el.className="sp";el.dataset.i=s.i;el.setAttribute("role","button");el.tabIndex=0;
+  mksEl.appendChild(el);
+  return {s,el,mode:null,ax:0,ay:0};
+});
+let pinEl=null,pinLL=null;
+const modeOf=z=>z<7?"dot":z<10?"pill":"big";
+function spotState(i){
+  const h=wave(i,"wave_height",state.day,SLOTS[state.slot].h);
+  return h==null?null:{h,l:level(h)};
+}
+function setIcon(m,mode){
+  const st=spotState(m.s.i),cls=st?"lv"+st.l:"lvx";
+  m.mode=mode;
+  if(mode==="dot"){m.el.innerHTML=`<span class="dot ${cls}"></span>`;m.ax=8;m.ay=8}
+  else if(mode==="pill"){m.el.innerHTML=`<div class="pill ${cls}">${st?sizeSVG(st.l):""}<b>${st?st.h.toFixed(1):"—"}</b></div>`;m.ax=st?36:22;m.ay=15}
+  else{const al=altsOf(m.s)[0];m.el.innerHTML=`<div class="big ${cls}">${st?sizeSVG(st.l):'<span class="blank"></span>'}<b>${st?st.h.toFixed(1):"—"}<small>m</small></b><i>${esc(nameOf(m.s))}</i>${al?`<em>${esc(al)}</em>`:""}</div>`;m.ax=39;m.ay=40}
+  m.el.title=nameOf(m.s);
+  m.el.setAttribute("aria-label",nameOf(m.s)+(st?" "+st.h.toFixed(1)+" m "+LVL(st.l):""));
+}
+function placeMarkers(){
+  const mode=modeOf(view.z),WS=wsize(view.z);
+  const wx=x=>x-Math.round((x-W/2)/WS)*WS;
+  for(const m of markers){
+    if(m.mode!==mode)setIcon(m,mode);
+    const p=toScreen(m.s.lat,m.s.lon);p.x=wx(p.x);
+    if(p.x<-90||p.x>W+90||p.y<-90||p.y>H+90){m.el.style.display="none";continue}
+    m.el.style.display="";
+    m.el.style.transform=`translate(${(p.x-m.ax).toFixed(1)}px,${(p.y-m.ay).toFixed(1)}px)`;
+    m.el.style.zIndex=Math.round(p.y);
+  }
+  if(pinEl&&pinLL){
+    const p=toScreen(pinLL.lat,pinLL.lon);p.x=wx(p.x);
+    pinEl.style.transform=`translate(${(p.x-14).toFixed(1)}px,${(p.y-34).toFixed(1)}px)`;
+    pinEl.style.zIndex=9999;
+  }
+}
+function refreshIcons(){markers.forEach(m=>{m.mode=null});placeMarkers()}
+let raf=0;
+function draw(){drawTiles();placeMarkers()}
+function schedule(){if(!raf)raf=requestAnimationFrame(()=>{raf=0;draw()})}
+function setPin(ll){
+  pinLL=ll;
+  if(!pinEl){
+    pinEl=document.createElement("div");pinEl.className="pin";
+    pinEl.innerHTML='<svg class="pinicon" viewBox="0 0 28 36" aria-hidden="true"><path d="M14 34S3 22.5 3 13.5a11 11 0 0 1 22 0C25 22.5 14 34 14 34z"/><circle cx="14" cy="13.5" r="4" fill="#fff" stroke="none"/></svg>';
+    mksEl.appendChild(pinEl);
+  }
+  placeMarkers();
+}
+
+/* ---- gestures ---- */
+const ptrs=new Map();
+let g0=null,z0=0,d0=0,start=null;
+const pts=()=>[...ptrs.values()];
+const midOf=p=>({x:p.reduce((a,b)=>a+b.x,0)/p.length,y:p.reduce((a,b)=>a+b.y,0)/p.length});
+function rebase(){
+  const p=pts();if(!p.length)return;
+  const m=midOf(p);g0=geoAt(m.x,m.y);z0=view.z;
+  d0=p.length>1?Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y):0;
+}
+mapEl.addEventListener("pointerdown",e=>{
+  if(e.pointerType==="mouse"&&e.button!==0)return;
+  try{mapEl.setPointerCapture(e.pointerId)}catch(_){}
+  ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(ptrs.size===1)start={x:e.clientX,y:e.clientY,t:Date.now(),target:e.target,moved:false};
+  else if(start)start.moved=true;
+  rebase();
+});
+mapEl.addEventListener("pointermove",e=>{
+  if(!ptrs.has(e.pointerId))return;
+  ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  const p=pts(),m=midOf(p);
+  if(start&&Math.hypot(e.clientX-start.x,e.clientY-start.y)>6)start.moved=true;
+  if(!start||!start.moved)return;
+  const nz=p.length>1&&d0>0?z0+Math.log2(Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y)/d0):z0;
+  anchor(g0,m.x,m.y,nz);schedule();
+});
+function endPtr(e){
+  if(!ptrs.has(e.pointerId))return;
+  ptrs.delete(e.pointerId);
+  if(ptrs.size===0){
+    if(e.type==="pointerup"&&start&&!start.moved&&Date.now()-start.t<700)tap(start.target,e.clientX,e.clientY);
+    start=null;
+  }else rebase();
+}
+mapEl.addEventListener("pointerup",endPtr);
+mapEl.addEventListener("pointercancel",endPtr);
+mapEl.addEventListener("wheel",e=>{
+  e.preventDefault();
+  const g=geoAt(e.clientX,e.clientY);
+  anchor(g,e.clientX,e.clientY,view.z-e.deltaY*(e.deltaMode===1?0.05:0.0022));schedule();
+},{passive:false});
+function tap(target,x,y){
+  const spEl=target&&target.closest?target.closest(".sp"):null;
+  if(spEl){pick(+spEl.dataset.i);return}
+  const pinHit=target&&target.closest?target.closest(".pin"):null;
+  if(pinHit&&CUSTOM){pick("c");return}
+  pickCustom(geoAt(x,y));
+}
+mapEl.addEventListener("keydown",e=>{
+  if((e.key==="Enter"||e.key===" ")&&e.target.classList&&e.target.classList.contains("sp")){e.preventDefault();pick(+e.target.dataset.i)}
+});
+function zoomBy(d){const g=geoAt(W/2,H/2);anchor(g,W/2,H/2,Math.round(view.z)+d);draw()}
+document.getElementById("zin").addEventListener("click",()=>zoomBy(1));
+document.getElementById("zout").addEventListener("click",()=>zoomBy(-1));
+
+/* ---- view presets ---- */
+function usable(){
+  const top=document.getElementById("panel").getBoundingClientRect().bottom;
+  const bot=H-document.getElementById("legend").getBoundingClientRect().top;
+  return{top,bot};
+}
+function fit(lat,lon,spanLat,spanLon){
+  const u=usable();
+  const zH=Math.log2((H-u.top-u.bot-16)*360*Math.cos(lat*Math.PI/180)/(256*spanLat));
+  const zW=Math.log2((W-24)*360/(256*spanLon));
+  anchor({lat,lon},W/2,(u.top+(H-u.bot))/2,Math.min(zH,zW));
+  draw();
+}
+function fitRegion(id){const r=REGIONS.find(x=>x.id===id);if(r)fit(r.lat,r.lon,r.sa,r.so)}
+
+/* ---- UI ---- */
+function renderChips(){
+  document.getElementById("days").innerHTML=DAYS.map((d,n)=>{
+    const [y,m,dd]=d.split("-").map(Number);const wd=new Date(y,m-1,dd).getDay();
+    return `<button class="chip" data-day="${n}" aria-pressed="${n===state.day}"><span class="d">${m}/${dd}</span><span class="w ${wd===6?"sat":wd===0?"sun":""}">${T[LANG].wd[wd]}</span>${n===0?'<span class="today"></span>':""}</button>`;
+  }).join("");
+  document.getElementById("times").innerHTML=SLOTS.map((s,n)=>`<button class="chip" data-slot="${n}" aria-pressed="${n===state.slot}" aria-label="${T[LANG].slot[n]} ${s.h}:00">${s.icon}</button>`).join("");
+}
+function renderRegions(){
+  document.getElementById("regions").innerHTML=REGIONS.map(r=>`<button class="chip" data-reg="${r.id}">${r[LANG]}</button>`).join("");
+}
+function renderLegend(){
+  const labels=["0m","0.2","0.4","0.7","1","1.4","2","3+"];
+  document.getElementById("scale").innerHTML=T[LANG].lv.map((_,l)=>`<div>${sizeSVG(l)}<small>${labels[l]}</small></div>`).join("");
+}
+function applyLang(){
+  document.documentElement.lang=LANG;
+  document.title=tr("title")+" / Surf Map";
+  const al=(id,k)=>{const e=document.getElementById(id);if(e)e.setAttribute("aria-label",tr(k))};
+  al("map","map");al("zin","zin");al("zout","zout");al("legend","legend");al("iconsw","iconsw");al("dclose","close");al("reload","reload");
+  document.getElementById("tiptxt").textContent=tr("tip");
+  const lb=document.getElementById("langbtn");lb.textContent=tr("other");lb.setAttribute("aria-label",tr("langbtn"));
+  renderRegions();renderLegend();render();
+  if(dlg.open)openDetail(state.open);
+}
+function render(){
+  renderChips();
+  document.getElementById("status").innerHTML=ERR?`<div class="status" role="alert"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--w-on)" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18.5v.5"/></svg><p>${tr("err")}</p><button id="retry">${tr("retry")}</button></div>`:"";
+  refreshIcons();
+}
+
+/* ---- detail sheet ---- */
+const dlg=document.getElementById("dlg");
+function metaHTML(key,date,hour,face){
+  const per=wave(key,"wave_period",date,hour),dir=wave(key,"wave_direction",date,hour);
+  const ws=wind(key,"wind_speed_10m",date,hour),wd=wind(key,"wind_direction_10m",date,hour);
+  let s="";
+  if(per!=null)s+=`<span class="mini" aria-label="${tr("per")} ${per.toFixed(0)} s">${periodSVG(per)}${per.toFixed(0)}<span class="u">s</span></span>`;
+  if(dir!=null)s+=`<span class="mini" aria-label="${tr("wdir")}">${dirSVG((dir+180)%360)}</span>`;
+  s+=windChip(ws,wd,face);
+  return s;
+}
+function tideSVG(key,date,hour){
+  const vals=Array.from({length:24},(_,h)=>tide(key,"sea_level_height_msl",date,h));
+  if(vals.some(v=>v==null))return "";
+  const mn=Math.min(...vals),mx=Math.max(...vals),rg=Math.max(mx-mn,0.1);
+  const X=h=>4+h/23*220,Y=v=>6+(1-(v-mn)/rg)*34;
+  const line=vals.map((v,h)=>(h?"L":"M")+X(h).toFixed(1)+" "+Y(v).toFixed(1)).join(" ");
+  const ticks=[6,12,18].map(h=>`<path d="M${X(h).toFixed(1)} 42v4" style="fill:none;stroke:var(--muted);stroke-width:1.2"/>`).join("");
+  const fmt=v=>(v>=0?"+":"−")+Math.abs(v).toFixed(1);
+  return `<svg viewBox="0 0 228 48" style="width:100%;height:auto;display:block" role="img" aria-label="${tr("tide")} ${tr("max")} ${fmt(mx)} m ${tr("min")} ${fmt(mn)} m"><path d="${line} L${X(23)} 42 L${X(0)} 42 Z" style="fill:var(--l2);opacity:.28"/><path d="${line}" style="fill:none;stroke:var(--l4);stroke-width:2;stroke-linecap:round;stroke-linejoin:round"/>${ticks}<path d="M4 42H224" style="stroke:var(--line);stroke-width:1;fill:none"/><circle cx="${X(hour).toFixed(1)}" cy="${Y(vals[hour]).toFixed(1)}" r="4" style="fill:var(--accent);stroke:var(--surface);stroke-width:2"/></svg><div class="tidenum"><span>▲ ${fmt(mx)}</span><span>▼ ${fmt(mn)}</span></div>`;
+}
+function openDetail(key){
+  const s=spotOf(key);if(!s)return;
+  state.open=key;
+  const date=state.day,hour=SLOTS[state.slot].h;
+  const nm=document.getElementById("dname");
+  nm.textContent=nameOf(s);
+  if(key==="c")nm.insertAdjacentHTML("beforeend",`<small>${fmtLL(s.lat,s.lon)}</small>`);
+  else nm.insertAdjacentHTML("beforeend",`<small>${esc(altsOf(s).concat(subOf(s)).filter(Boolean).join(" · "))}</small>`);
+  const h=wave(key,"wave_height",date,hour);
+  let html="";
+  if(h!=null){
+    html+=`<div class="sum">${sizeSVG(level(h))}<div><div class="ht"><b>${h.toFixed(1)}</b><small>m</small></div><div class="meta">${metaHTML(key,date,hour,s.face)}</div></div></div>`;
+    const sw=wave(key,"swell_wave_height",date,hour),sp=wave(key,"swell_wave_period",date,hour),ww=wave(key,"wind_wave_height",date,hour),temp=tide(key,"sea_surface_temperature",date,hour);
+    const cells=[];
+    if(sw!=null)cells.push(`<div class="kv" aria-label="${tr("swell")} ${sw.toFixed(1)} m"><svg viewBox="0 0 20 20" aria-hidden="true"><path class="stroke" d="M1.5 12q4.2-9 8.5 0t8.5 0"/></svg><b>${sw.toFixed(1)}</b><small>m</small>${sp!=null?`<em>${sp.toFixed(0)}s</em>`:""}</div>`);
+    if(ww!=null)cells.push(`<div class="kv" aria-label="${tr("windwave")} ${ww.toFixed(1)} m"><svg viewBox="0 0 20 20" aria-hidden="true"><path class="stroke" d="M1.5 13l2.2-4 2.2 4 2.2-4 2.2 4 2.2-4 2.2 4 2.2-4"/></svg><b>${ww.toFixed(1)}</b><small>m</small></div>`);
+    if(temp!=null)cells.push(`<div class="kv" aria-label="${tr("sst")} ${temp.toFixed(0)} °C"><svg viewBox="0 0 20 20" aria-hidden="true"><path class="stroke" d="M8 3.5a2 2 0 0 1 4 0v8.2a3.6 3.6 0 1 1-4 0z"/><path class="stroke" d="M10 8v6"/></svg><b>${temp.toFixed(0)}</b><small>°C</small></div>`);
+    if(cells.length)html+=`<div class="kvs">${cells.join("")}</div>`;
+    const tsvg=tideSVG(key,date,hour);
+    if(tsvg)html+=`<div><p class="cap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M2 9q2.5-3 5 0t5 0 5 0 5 0M2 16q2.5-3 5 0t5 0 5 0 5 0"/></svg>0 → 24h</p>${tsvg}</div>`;
+    const hrs=[0,3,6,9,12,15,18,21],vals=hrs.map(x=>wave(key,"wave_height",date,x));
+    const mx=Math.max(1.5,...vals.filter(v=>v!=null));
+    html+=`<div><p class="cap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>3h</p><div class="bars">`+
+      hrs.map((x,k)=>{
+        const v=vals[k],p=wave(key,"wave_period",date,x);
+        if(v==null)return `<div class="bar3"><span class="v">—</span><span class="col"></span><span class="x">${x}</span><span class="p">&nbsp;</span></div>`;
+        return `<div class="bar3 lv${level(v)}"><span class="v">${v.toFixed(1)}</span><span class="col"><i style="height:${Math.max(2,v/mx*100).toFixed(0)}%"></i></span><span class="x">${x}</span><span class="p">${p==null?"":p.toFixed(0)+"s"}</span></div>`;
+      }).join("")+`</div></div>`;
+    html+=`<div><p class="cap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>${hour}:00 · ${tr("local")}</p><div class="days5">`+
+      DAYS.map((d,n)=>{
+        const v=wave(key,"wave_height",n,hour);const [,m,dd]=d.split("-").map(Number);
+        return `<button data-pday="${n}" aria-pressed="${n===state.day}">${v==null?'<span class="pic"></span>':sizeSVG(level(v))}<span class="d">${m}/${dd}</span><span class="m">${v==null?"—":v.toFixed(1)}</span></button>`;
+      }).join("")+`</div></div>`;
+  }else if(DATA[key]&&DATA[key].full){
+    html+=`<p class="note">${tr("noFc")}</p>`;
+  }else{
+    html+=`<div class="loading" aria-hidden="true"></div>`;
+  }
+  const lk=[["Windy",`https://www.windy.com/?${s.lat.toFixed(3)},${s.lon.toFixed(3)},9`]].concat((SITES[s.cc]||[]).map(x=>[x[LANG==="ja"?0:1],x[2]]),[["Surf-Forecast","https://www.surf-forecast.com/"]]);
+  html+=`<div class="links">${lk.map(x=>`<a href="${x[1]}" target="_blank" rel="noopener">${esc(x[0])}</a>`).join("")}</div><p class="note">${tr("note")}</p>`;
+  document.getElementById("dbody").innerHTML=html;
+  if(!dlg.open)dlg.showModal();
+}
+function pick(i){state.open=i;openDetail(i);loadDetail(i)}
+function pickCustom(ll){
+  CUSTOM={ja:"選んだ地点",en:"Selected point",loc:"",cc:"",pref:"",lat:ll.lat,lon:ll.lon,face:null,i:"c"};
+  DATA.c={m:null,w:null,t:null,full:false};
+  setPin(ll);
+  pick("c");
+}
+
+/* ---- events ---- */
+document.addEventListener("click",e=>{
+  const t=e.target.closest("[data-day],[data-slot],[data-pday],[data-reg],#retry,#reload,#dclose,#iconsw,#langbtn");
+  if(!t){if(e.target===dlg)dlg.close();return}
+  if(t.dataset.day!==undefined){state.day=+t.dataset.day;render();if(dlg.open)openDetail(state.open)}
+  else if(t.dataset.slot!==undefined){state.slot=+t.dataset.slot;render();if(dlg.open)openDetail(state.open)}
+  else if(t.dataset.pday!==undefined){state.day=+t.dataset.pday;render();openDetail(state.open)}
+  else if(t.dataset.reg!==undefined)fitRegion(t.dataset.reg);
+  else if(t.id==="langbtn"){
+    LANG=LANG==="ja"?"en":"ja";
+    try{localStorage.setItem("nami-lang",LANG)}catch(_){}
+    applyLang();
+  }
+  else if(t.id==="iconsw"){
+    ICON=ICON==="wave"?"body":"wave";
+    try{localStorage.setItem("nami-icon",ICON)}catch(_){}
+    renderLegend();refreshIcons();if(dlg.open)openDetail(state.open);
+  }
+  else if(t.id==="retry"||t.id==="reload")loadBulk(true);
+  else if(t.id==="dclose")dlg.close();
+});
+dlg.addEventListener("close",()=>{state.open=null});
+addEventListener("resize",()=>{W=innerWidth;H=innerHeight;draw()});
+
+applyLang();
+{const hs=decodeURIComponent(location.hash.slice(1));fitRegion(REGIONS.some(r=>r.id===hs)?hs:"iwate")}
+loadBulk(false);
+</script>
+</body>
+</html>
